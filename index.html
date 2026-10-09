@@ -1,0 +1,273 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BUZZED | Attendance Scanner</title>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 28px 16px;
+      min-height: 100vh;
+      background: #101010;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      text-align: center;
+    }
+
+    main { max-width: 460px; margin: auto; }
+
+    h1 {
+      font-size: 38px;
+      letter-spacing: 6px;
+      margin: 8px 0;
+    }
+
+    .subtitle {
+      color: #aaa;
+      font-size: 11px;
+      letter-spacing: 3px;
+      margin-bottom: 28px;
+    }
+
+    .panel {
+      padding: 16px;
+      background: #1b1b1b;
+      border: 1px solid #363636;
+      border-radius: 16px;
+    }
+
+    #reader {
+      width: 100%;
+      overflow: hidden;
+      border-radius: 12px;
+    }
+
+    button {
+      display: block;
+      width: 100%;
+      padding: 15px;
+      margin-top: 12px;
+      border: 0;
+      border-radius: 9px;
+      font-size: 15px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    #start { background: white; color: black; }
+    #stop { background: #333; color: white; }
+
+    #result {
+      display: none;
+      margin-top: 16px;
+      padding: 18px;
+      border-radius: 12px;
+      overflow-wrap: anywhere;
+    }
+
+    #result h2 { margin: 0 0 10px; font-size: 21px; }
+    #result p { margin: 6px 0; }
+
+    .success { background: #123b28; border: 1px solid #39855c; }
+    .warning { background: #443817; border: 1px solid #b9953d; }
+    .error { background: #451e22; border: 1px solid #b94b52; }
+
+    .note {
+      color: #999;
+      font-size: 12px;
+      line-height: 1.5;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+
+<body>
+<main>
+  <h1>BUZZED</h1>
+  <div class="subtitle">ATTENDANCE SCANNER</div>
+
+  <section class="panel">
+    <div id="reader"></div>
+    <button id="start">START SCANNER</button>
+    <button id="stop">STOP SCANNER</button>
+
+    <div id="result" role="status" aria-live="polite">
+      <h2 id="title"></h2>
+      <p id="name"></p>
+      <p id="message"></p>
+    </div>
+  </section>
+
+  <p class="note">
+    Scan the QR code on an attendee's registration.
+    Keep this page open during check-in.
+  </p>
+</main>
+
+<script>
+  const WEB_APP_URL =
+    "https://script.google.com/macros/s/AKfycbzXPrP19y9mVYUWhTx2k-8elFlN3Jt4wqnIp2uGyn7PclL6C7D90iIX6mtmgLhgyPEV/exec";
+
+  const scanner = new Html5Qrcode("reader");
+  const resultBox = document.getElementById("result");
+
+  let running = false;
+  let processing = false;
+  let previousQR = "";
+
+  function display(type, heading, attendee, details) {
+    resultBox.className = type;
+    document.getElementById("title").textContent = heading;
+    document.getElementById("name").textContent = attendee || "";
+    document.getElementById("message").textContent = details || "";
+    resultBox.style.display = "block";
+  }
+
+  function getRegistrationId(text) {
+    try {
+      const url = new URL(text);
+
+      if (
+        url.hostname !== "script.google.com" ||
+        !url.pathname.endsWith("/exec")
+      ) {
+        return null;
+      }
+
+      return url.searchParams.get("id");
+    } catch {
+      return null;
+    }
+  }
+
+  function requestCheckIn(id) {
+    return new Promise((resolve, reject) => {
+      const callback = "buzzed_" +
+        Date.now() + "_" + Math.random().toString(36).slice(2);
+
+      const script = document.createElement("script");
+      let finished = false;
+
+      function cleanup() {
+        clearTimeout(timer);
+        delete window[callback];
+        script.remove();
+      }
+
+      const timer = setTimeout(() => {
+        if (finished) return;
+        finished = true;
+        cleanup();
+        reject(new Error("Server timed out. Please try again."));
+      }, 20000);
+
+      window[callback] = data => {
+        if (finished) return;
+        finished = true;
+        cleanup();
+        resolve(data);
+      };
+
+      script.onerror = () => {
+        if (finished) return;
+        finished = true;
+        cleanup();
+        reject(new Error("Could not connect to the check-in server."));
+      };
+
+      script.src = WEB_APP_URL +
+        "?id=" + encodeURIComponent(id) +
+        "&callback=" + encodeURIComponent(callback) +
+        "&_=" + Date.now();
+
+      document.body.appendChild(script);
+    });
+  }
+
+  async function handleScan(text) {
+    if (processing || text === previousQR) return;
+
+    const id = getRegistrationId(text);
+
+    if (!id) {
+      previousQR = text;
+      display("error", "INVALID QR CODE", "", "This QR code is not a recognized registration link.");
+      setTimeout(() => previousQR = "", 2500);
+      return;
+    }
+
+    processing = true;
+    previousQR = text;
+    display("", "VERIFYING...", "", "Contacting attendance system.");
+
+    try {
+      const result = await requestCheckIn(id);
+
+      if (result.ok) {
+        display(
+          "success",
+          "CHECK-IN SUCCESSFUL",
+          result.name,
+          result.timestamp ? "Time: " + result.timestamp : "Attendance recorded."
+        );
+      } else if (result.already) {
+        display(
+          "warning",
+          "ALREADY CHECKED IN",
+          result.name,
+          "This registration was already checked in."
+        );
+      } else {
+        display(
+          "error",
+          "CHECK-IN FAILED",
+          result.name || "",
+          result.message || "Registration could not be verified."
+        );
+      }
+    } catch (error) {
+      display("error", "CONNECTION ERROR", "", error.message);
+    } finally {
+      processing = false;
+      setTimeout(() => previousQR = "", 2500);
+    }
+  }
+
+  document.getElementById("start").addEventListener("click", async () => {
+    if (running) return;
+
+    try {
+      await scanner.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        handleScan
+      );
+      running = true;
+    } catch (error) {
+      display(
+        "error",
+        "CAMERA ERROR",
+        "",
+        "Allow camera access and open this site over HTTPS. " + error.message
+      );
+    }
+  });
+
+  document.getElementById("stop").addEventListener("click", async () => {
+    if (!running) return;
+
+    try {
+      await scanner.stop();
+      running = false;
+    } catch (error) {
+      display("error", "SCANNER ERROR", "", error.message);
+    }
+  });
+</script>
+</body>
+</html>
