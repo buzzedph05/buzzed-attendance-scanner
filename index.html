@@ -189,59 +189,46 @@
     });
   }
 
-  async function handleScan(text) {
-    if (processing || text === previousQR) return;
 
-    const id = getRegistrationId(text);
+async function handleScan(text) {
+  if (processing || text === previousQR) return;
 
-    if (!id) {
-      previousQR = text;
-      display("error", "INVALID QR CODE", "", "This QR code is not a recognized registration link.");
-      setTimeout(() => previousQR = "", 2500);
-      return;
-    }
+  const id = getRegistrationId(text);
 
-    processing = true;
+  if (!id) {
     previousQR = text;
-    display("", "VERIFYING...", "", "Contacting attendancedisplay(
-  "warning",
-  "REGISTRATION CHECK",
-  "",
-  "Verifying ticket only. Attendance has not been recorded."
-); system.");
+    display(
+      "error",
+      "INVALID QR CODE",
+      "",
+      "This QR code is not a recognized registration link."
+    );
+    setTimeout(() => previousQR = "", 2500);
+    return;
+  }
 
-    try {
-      const result = await requestCheckIn(id);
+  processing = true;
+  previousQR = text;
 
-      if (result.ok && result.verified) {
   display(
     "success",
-    "REGISTRATION VERIFIED",
-    result.name,
-    "Valid ticket. Attendance has NOT been recorded."
+    "TICKET SCANNED",
+    "",
+    "Opening the staff authorization page..."
   );
-      } else if (result.already) {
-        display(
-          "warning",
-          "ALREADY CHECKED IN",
-          result.name,
-          "This registration was already checked in."
-        );
-      } else {
-        display(
-          "error",
-          "CHECK-IN FAILED",
-          result.name || "",
-          result.message || "Registration could not be verified."
-        );
-      }
-    } catch (error) {
-      display("error", "CONNECTION ERROR", "", error.message);
-    } finally {
-      processing = false;
-      setTimeout(() => previousQR = "", 2500);
-    }
+
+  try {
+    const checkInPage = WEB_APP_URL +
+      "?id=" + encodeURIComponent(id);
+
+    window.location.href = checkInPage;
+  } catch (error) {
+    display("error", "ERROR", "", error.message);
+    processing = false;
+    setTimeout(() => previousQR = "", 2500);
   }
+}
+
 
   document.getElementById("start").addEventListener("click", async () => {
     if (running) return;
