@@ -203,18 +203,23 @@
 
     processing = true;
     previousQR = text;
-    display("", "VERIFYING...", "", "Contacting attendance system.");
+    display("", "VERIFYING...", "", "Contacting attendancedisplay(
+  "warning",
+  "REGISTRATION CHECK",
+  "",
+  "Verifying ticket only. Attendance has not been recorded."
+); system.");
 
     try {
       const result = await requestCheckIn(id);
 
-      if (result.ok) {
-        display(
-          "success",
-          "CHECK-IN SUCCESSFUL",
-          result.name,
-          result.timestamp ? "Time: " + result.timestamp : "Attendance recorded."
-        );
+      if (result.ok && result.verified) {
+  display(
+    "success",
+    "REGISTRATION VERIFIED",
+    result.name,
+    "Valid ticket. Attendance has NOT been recorded."
+  );
       } else if (result.already) {
         display(
           "warning",
